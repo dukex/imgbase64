@@ -3,6 +3,7 @@ package imgbase64
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -40,7 +41,7 @@ func encode(bin []byte) []byte {
 // Lightweight HTTP Client to fetch the image
 // Note: This will also pull webpages. @todo
 // It is up to the user to use valid image urls.
-func get(url string) ([]byte, string) {
+func get(url string) ([]byte, string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Fatal("Error getting url.")
@@ -50,46 +51,41 @@ func get(url string) ([]byte, string) {
 	ct := resp.Header.Get("Content-Type")
 
 	if resp.StatusCode == 200 && len(body) > 512 {
-		return body, ct
+		return body, ct, nil
 	}
 
 	if DefaultImage() == "" {
-		return []byte(""), ct
+		return []byte(""), ct, nil
 	}
 
 	if url == DefaultImage() {
-		panic("Catching an infinite loop! Default Image doesn't exist or is broken. Please rectify!")
+		return []byte(""), ct, errors.New("Catching an infinite loop! Default Image doesn't exist or is broken. Please rectify!")
 	}
 
 	return get(DefaultImage())
-}
-
-// DEPRECATED
-// Begin a NewImage to fetch
-// TODO: Deprecate NewImage
-func NewImage(url string) string {
-	return FromRemote(url)
 }
 
 // FromRemote is a better named function that
 // presently calls NewImage which will be deprecated.
 // Function accepts an RFC compliant URL and returns
 // a base64 encoded result.
-func FromRemote(url string) string {
-	image, mime := get(cleanUrl(url))
+func FromRemote(url string) (string, error) {
+	image, mime, err := get(cleanUrl(url))
+	if err != nil {
+		return "", err
+	}
 	enc := encode(image)
 
-	out := format(enc, mime)
-	return out
+	return format(enc, mime), nil
 }
 
 // FromBuffer accepts a buffer and returns a
 // base64 encoded string.
-func FromBuffer(buf bytes.Buffer) string {
+func FromBuffer(buf bytes.Buffer) (string, error) {
 	enc := encode(buf.Bytes())
 	mime := http.DetectContentType(buf.Bytes())
 
-	return format(enc, mime)
+	return format(enc, mime), nil
 }
 
 // FromLocal reads a local file and returns
@@ -112,7 +108,7 @@ func FromLocal(fname string) (string, error) {
 		return "", fmt.Errorf("Error reading file to buffer\n")
 	}
 
-	return FromBuffer(b), nil
+	return FromBuffer(b)
 }
 
 // format is an abstraction of the mime switch to create the
